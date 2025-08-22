@@ -1,0 +1,5 @@
+/* Keep the app full-viewport; visuals live in Feed.css */
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
