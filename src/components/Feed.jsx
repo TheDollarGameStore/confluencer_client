@@ -259,6 +259,13 @@ function Feed() {
 
   const b2 = useBackblazeAudio(b2Config)
 
+  // API base: use env in production, fall back to dev proxy
+  const apiBase = useMemo(() => {
+    const fromEnv = (import.meta.env.VITE_API_BASE_URL || '').trim()
+    if (fromEnv) return fromEnv.replace(/\/$/, '')
+    return '/api'
+  }, [])
+
   // Turn a local-ish path like "/audio/audio1.mp3" into an object key "audio/audio1.mp3"
   const toObjectKey = useCallback((p) => (p || '').replace(/^\//, ''), [])
 
@@ -290,7 +297,7 @@ function Feed() {
       setIsLoading(true)
       setLoadError(null)
       try {
-        const res = await fetch('/api/summaries', { credentials: 'omit' })
+  const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
         const mapped = adaptSummariesToSlides(json)
@@ -311,7 +318,7 @@ function Feed() {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const res = await fetch('/api/summaries', { credentials: 'omit' })
+  const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       const mapped = adaptSummariesToSlides(json)
@@ -322,7 +329,7 @@ function Feed() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [apiBase])
 
   // Start/restart audio when slide or section changes
   useEffect(() => {
