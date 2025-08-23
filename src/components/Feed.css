@@ -29,6 +29,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden; /* contain bob animation */
 }
 
 .feed-item img {
@@ -85,4 +86,16 @@
   color: rgba(255,255,255,0.8);
   font-size: 11px;
   text-align: right;
+}
+
+/* Quick bob animation for pose image */
+@keyframes bob-up-down {
+  0%   { transform: translateY(0); }
+  30%  { transform: translateY(-6px); }
+  60%  { transform: translateY(0); }
+  100% { transform: translateY(0); }
+}
+
+.pose-img.bob {
+  animation: bob-up-down 200ms ease-out;
 }

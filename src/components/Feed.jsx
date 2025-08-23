@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { ACTIONS } from '../enums/actions.js'
 import PropTypes from 'prop-types'
 import './Feed.css'
 
@@ -60,9 +61,8 @@ const data = [
   }
 ]
 
-// Text overlay that fits in max 20% viewport height and chunks long text
-// Also auto-advances pages in sync with audio progress (approx by words)
-const TextOverlay = ({ text, audioRef, isActive = false }) => {
+// Text overlay that shows one word at a time, synced with audio
+const TextOverlay = ({ text, audioRef, isActive = false, onWordChange }) => {
   const [pages, setPages] = useState([text || ''])
   const [pageIndex, setPageIndex] = useState(0)
   const measureRef = useRef(null)
@@ -135,8 +135,8 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
       }
     }
 
-  // Reset to first page when audio ends
-  const onEnded = () => setPageIndex(0)
+    // Reset to first page when audio ends
+    const onEnded = () => setPageIndex(0)
 
     audio.addEventListener('timeupdate', updateFromTime)
     audio.addEventListener('seeked', updateFromTime)
@@ -149,6 +149,15 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
       audio.removeEventListener('ended', onEnded)
     }
   }, [audioRef, pages.length, pageIndex, isActive])
+
+  // Notify parent whenever the visible word changes
+  useEffect(() => {
+    if (!isActive) return
+    if (typeof onWordChange === 'function') {
+      onWordChange(pageIndex)
+    }
+  }, [pageIndex, isActive, onWordChange])
+
 
   return (
     <div
@@ -242,6 +251,7 @@ TextOverlay.propTypes = {
   text: PropTypes.string,
   audioRef: PropTypes.shape({ current: PropTypes.any }),
   isActive: PropTypes.bool,
+  onWordChange: PropTypes.func,
 }
 
 function Feed() {
@@ -502,11 +512,58 @@ function Feed() {
               draggable={false}
               style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
             />
+            {(() => {
+              const actionKey = item.sections?.[0]?.action
+              const poseFile = ACTIONS[actionKey] || ACTIONS.thinking
+              const poseSrc = `/images/poses/brain/${poseFile}`
+              return (
+                <div
+                  className="pose-wrap"
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    bottom: '36%',
+                    transform: 'translateX(-50%)',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                  }}
+                >
+                  <img
+                    src={poseSrc}
+                    alt={actionKey ? `${actionKey} pose` : 'pose'}
+                    draggable={false}
+                    className="pose-img"
+                    style={{
+                      maxHeight: 'clamp(80px, 25vh, 220px)',
+                      height: 'auto',
+                      width: 'auto',
+                      maxWidth: '90%',
+                      objectFit: 'contain',
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                      display: 'block',
+                      margin: '0 auto',
+                    }}
+                  />
+                </div>
+              )
+            })()}
 
-            <TextOverlay
+      <TextOverlay
               text={item.sections[0].text}
               audioRef={audioRef}
               isActive={current === index + 1}
+              onWordChange={() => {
+                const sel = `.feed-frame[data-index="${index + 1}"] .pose-img`
+                const el = document.querySelector(sel)
+                if (!el) {
+                  return
+                }
+                el.classList.remove('bob')
+        // force reflow to restart CSS animation reliably
+        el.getBoundingClientRect()
+        el.classList.add('bob')
+              }}
             />
           </div>
         </div>
