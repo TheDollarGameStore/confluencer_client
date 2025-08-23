@@ -72,7 +72,9 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
 
   const recompute = useCallback(() => {
     const el = measureRef.current
+
     if (!el) return
+
     const words = (text || '').trim().split(/\s+/).filter(Boolean)
     if (words.length === 0) {
       setPages([''])
