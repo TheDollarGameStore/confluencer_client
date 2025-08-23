@@ -5,7 +5,7 @@ import './Feed.css'
 const data = [
   {
     title: 'Image 1',
-    background: '/images/img1.svg',
+    background: '/images/backgrounds/background1.png',
     sections: [
       {
         text: 'Hello! I\'m the confluencer brain! \nThis shit is driving me bananas. I wanna vibe code myself out of existence',
@@ -16,7 +16,7 @@ const data = [
   },
   {
     title: 'Image 2',
-    background: '/images/img2.svg',
+    background: '/images/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the second image in the feed.',
@@ -27,7 +27,7 @@ const data = [
   },
   {
     title: 'Image 3',
-    background: '/images/img3.svg',
+    background: '/images/backgrounds/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the third image in the feed.',
@@ -38,7 +38,7 @@ const data = [
   },
   {
     title: 'Image 4',
-    background: '/images/img4.svg',
+    background: '/images/backgrounds/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the fourth image in the feed.',
@@ -49,7 +49,7 @@ const data = [
   },
   {
     title: 'Image 5',
-    background: '/images/img5.svg',
+    background: '/images/backgrounds/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the fifth image in the feed.',
@@ -62,12 +62,13 @@ const data = [
 
 // Text overlay that fits in max 20% viewport height and chunks long text
 // Also auto-advances pages in sync with audio progress (approx by words)
-const TextOverlay = ({ text, audioRef }) => {
+const TextOverlay = ({ text, audioRef, isActive = false }) => {
   const [pages, setPages] = useState([text || ''])
   const [pageIndex, setPageIndex] = useState(0)
   const measureRef = useRef(null)
   const pageRangesRef = useRef([]) // array of [startWordIdx, endWordIdxExclusive]
   const totalWordsRef = useRef(0)
+  const showSentenceControls = false;
 
   const recompute = useCallback(() => {
     const el = measureRef.current
@@ -118,6 +119,16 @@ const TextOverlay = ({ text, audioRef }) => {
     recompute()
   }, [recompute])
 
+  // Reset page index when audio source changes (e.g., slide change)
+  useEffect(() => {
+    setPageIndex(0)
+  }, [audioRef?.current?.currentSrc])
+
+  // Also reset when this slide becomes active
+  useEffect(() => {
+    if (isActive) setPageIndex(0)
+  }, [isActive])
+
   useEffect(() => {
     const onResize = () => recompute()
     window.addEventListener('resize', onResize)
@@ -126,18 +137,19 @@ const TextOverlay = ({ text, audioRef }) => {
 
   // Auto-advance based on audio currentTime/duration mapped to word index
   useEffect(() => {
+    if (!isActive) return
     const audio = audioRef?.current
     if (!audio) return
 
     const updateFromTime = () => {
       const duration = isFinite(audio.duration) ? audio.duration : 0
-      if (!duration) return
+      if (!duration) { return }
       const totalWords = totalWordsRef.current || 0
-      if (!totalWords) return
+      if (!totalWords) { return }
       const ratio = Math.max(0, Math.min(1, audio.currentTime / duration))
       const wordIdx = Math.floor(ratio * totalWords)
       const ranges = pageRangesRef.current || []
-      if (!ranges.length) return
+      if (!ranges.length) { return }
       // find the page containing this word index
       let idx = pages.length - 1
       for (let i = 0; i < ranges.length; i++) {
@@ -168,7 +180,7 @@ const TextOverlay = ({ text, audioRef }) => {
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('ended', onEnded)
     }
-  }, [audioRef, pages.length, pageIndex])
+  }, [audioRef, pages.length, pageIndex, isActive])
 
   return (
     <div
@@ -228,7 +240,7 @@ const TextOverlay = ({ text, audioRef }) => {
         }}
       />
 
-      {pages.length > 1 && (
+      {pages.length > 1 && showSentenceControls && (
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -260,7 +272,8 @@ const TextOverlay = ({ text, audioRef }) => {
 
 TextOverlay.propTypes = {
   text: PropTypes.string,
-  audioRef: PropTypes.shape({ current: PropTypes.any })
+  audioRef: PropTypes.shape({ current: PropTypes.any }),
+  isActive: PropTypes.bool,
 }
 
 function Feed() {
@@ -279,37 +292,40 @@ function Feed() {
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
-      audioRef.current.play().catch((e) => { console.error('Audio playback error:', e) })
+      if (current > 0) {
+        audioRef.current.play().catch((e) => { console.error('Audio playback error:', e) })
+      }
     }
   }, [current])
 
 
   const containerRef = useRef(null)
-  const total = data.length
+  // total slides include an intro slide at index 0
+  const totalSlides = data.length + 1
 
   const scrollToIndex = useCallback((idx) => {
     if (!containerRef.current) return
-    const clamped = Math.max(0, Math.min(total - 1, idx))
+    const clamped = Math.max(0, Math.min(totalSlides - 1, idx))
     containerRef.current.scrollTo({
       top: clamped * containerRef.current.clientHeight,
       behavior: 'smooth',
     })
-  }, [total])
+  }, [totalSlides])
 
   const next = useCallback(() => scrollToIndex(current + 1), [current, scrollToIndex])
   const prev = useCallback(() => scrollToIndex(current - 1), [current, scrollToIndex])
 
   // when the visible image changes, notify parent (and fallback to console log)
   useEffect(() => {
-    if (current >= 0 && current < total) {
-      const name = data[current].title;
+    if (current >= 0 && current < totalSlides) {
+      const name = current === 0 ? 'Intro' : data[current - 1].title;
       if (typeof handleVisibleChange === 'function') {
         handleVisibleChange(name, current)
       } else {
         console.log('Visible image:', name)
       }
     }
-  }, [current, total, handleVisibleChange])
+  }, [current, totalSlides, handleVisibleChange])
 
   useEffect(() => {
     const el = containerRef.current
@@ -318,14 +334,14 @@ function Feed() {
     const onScroll = () => {
       const h = el.clientHeight || 1
       const idx = Math.round(el.scrollTop / h)
-      if (idx !== current) setCurrent(Math.max(0, Math.min(total - 1, idx)))
+      if (idx !== current) setCurrent(Math.max(0, Math.min(totalSlides - 1, idx)))
     }
 
     el.addEventListener('scroll', onScroll, { passive: true })
     // focus for keyboard nav
     el.focus({ preventScroll: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [current, total])
+  }, [current, totalSlides])
 
   // keyboard
   const onKeyDown = useCallback((e) => {
@@ -389,7 +405,7 @@ function Feed() {
   }, [onMouseMove, onMouseUp])
 
   console.log('Render Feed, current:', current);
-  console.log('Render Feed, audio src:', data[current].sections[0].audio);
+  console.log('Render Feed, audio src:', current > 0 ? data[current - 1].sections[0].audio : '(intro)');
 
   // Imperatively attach interactions to avoid a11y JSX warnings on non-interactive elements
   useEffect(() => {
@@ -420,7 +436,7 @@ function Feed() {
       {/* Audio element for current image */}
       <audio
         ref={audioRef}
-        src={data[current].sections[0].audio}
+        src={current > 0 ? data[current - 1].sections[0].audio : null}
         preload="auto"
       >
         <track
@@ -431,6 +447,28 @@ function Feed() {
           default
         />
       </audio>
+      {/* Intro slide */}
+      <div className="feed-item" key="_intro">
+        <div className="feed-frame" style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: '#fff',
+              fontFamily: 'Inter, Arial, sans-serif',
+              fontSize: 'clamp(18px, 4vw, 36px)',
+              textAlign: 'center',
+              userSelect: 'none',
+              padding: '0 16px',
+            }}
+          >
+            Swipe to start
+          </div>
+        </div>
+      </div>
+
       {data.map((item, index) => (
         <div className="feed-item" key={item.title}>
           <div className="feed-frame" style={{ position: 'relative' }}>
@@ -440,13 +478,13 @@ function Feed() {
               draggable={false}
               style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
             />
-            <TextOverlay text={item.sections[0].text} audioRef={audioRef} />
+            <TextOverlay text={item.sections[0].text} audioRef={audioRef} isActive={current === index + 1} />
           </div>
         </div>
       ))}
 
       <div className="feed-hud">
-        <div className="pill">{current + 1} / {total}</div>
+        <div className="pill">{current + 1} / {totalSlides}</div>
         <div className="hint">↑/↓ or swipe</div>
       </div>
     </div>
