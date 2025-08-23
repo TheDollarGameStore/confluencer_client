@@ -419,29 +419,35 @@ function Feed() {
     window.addEventListener('mouseup', onMouseUp)
   }, [onMouseMove, onMouseUp])
 
+  // Helper: toggle audio play/pause for the current slide
+  const toggleAudio = useCallback(() => {
+    const a = audioRef.current
+    if (!a) return
+    if (!a.paused) {
+      a.pause()
+      return
+    }
+    if (current > 0) {
+      const p = a.play()
+      if (p && typeof p.catch === 'function') {
+        p.catch((err) => console.error('Audio resume error:', err))
+      }
+    }
+  }, [current])
+
   // Imperatively attach interactions to avoid a11y JSX warnings on non-interactive elements
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const onClick = (e) => {
-      const target = e.target
-      const frame = target && typeof target.closest === 'function' ? target.closest('.feed-frame') : null
+      const frame = e.target && typeof e.target.closest === 'function' ? e.target.closest('.feed-frame') : null
       if (!frame) return
       const idxAttr = frame.getAttribute('data-index')
       const idx = idxAttr ? parseInt(idxAttr, 10) : NaN
-      if (!Number.isNaN(idx) && idx === current) {
-        const a = audioRef.current
-        if (!a) return
-        if (!a.paused) {
-          a.pause()
-        } else if (current > 0) {
-          // resume
-          const p = a.play()
-          if (p && typeof p.catch === 'function') {
-            p.catch((err) => console.error('Audio resume error:', err))
-          }
-        }
-      }
+      if (!Number.isFinite(idx)) return
+      if (idx === 0) { scrollToIndex(1); return }
+      if (idx !== current) return
+      toggleAudio()
     }
     // touch
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -459,7 +465,7 @@ function Feed() {
       el.removeEventListener('click', onClick)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current])
+  }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current, scrollToIndex, toggleAudio])
 
   return (
     <div
@@ -499,7 +505,7 @@ function Feed() {
               padding: '0 16px',
             }}
           >
-            Swipe to start
+            Tap to start
           </div>
         </div>
       </div>
