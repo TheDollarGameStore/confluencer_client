@@ -1,65 +1,35 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ACTIONS } from '../enums/actions.js'
 import PropTypes from 'prop-types'
 import './Feed.css'
+import useBackblazeAudio from '../hooks/useBackblazeAudio.js'
 
-const data = [
-  {
-    title: 'Image 1',
-    background: '/images/backgrounds/background1.png',
-    sections: [
-      {
-        text: 'Hello! I\'m the confluencer brain! \nThis shit is driving me bananas. I wanna vibe code myself out of existence',
-        audio: '/audio/audio1.mp3',
-        action: 'explaining1',
-      }
-    ]
-  },
-  {
-    title: 'Image 2',
-    background: '/images/backgrounds/background1.png',
-    sections: [
-      {
-        text: 'This is the second image in the feed.',
-        audio: '/audio/audio1.mp3',
-        action: 'explaining2',
-      }
-    ]
-  },
-  {
-    title: 'Image 3',
-    background: '/images/backgrounds/background1.png',
-    sections: [
-      {
-        text: 'This is the third image in the feed.',
-        audio: '/audio/audio3.mp3',
-        action: 'explaining3',
-      }
-    ]
-  },
-  {
-    title: 'Image 4',
-    background: '/images/backgrounds/background1.png',
-    sections: [
-      {
-        text: 'This is the fourth image in the feed.',
-        audio: '/audio/audio4.mp3',
-        action: 'explaining4',
-      }
-    ]
-  },
-  {
-    title: 'Image 5',
-    background: '/images/backgrounds/background1.png',
-    sections: [
-      {
-        text: 'This is the fifth image in the feed.',
-        audio: '/audio/audio5.mp3',
-        action: 'explaining5',
-      }
-    ]
-  }
-]
+// Helper to adapt API results to local slide structure (one slide per item, keep sections)
+function adaptSummariesToSlides(items) {
+  const fallbackBg = '/images/backgrounds/background1.png'
+  console.log('Raw summaries from API:', items)
+  if (!Array.isArray(items)) return []
+  return items.map((it, i) => {
+    const title = it?.title || it?.name || `Post ${i + 1}`
+    const background = it?.background || fallbackBg
+    // Normalize sections to [{ text, audio, action }]
+    let sections = []
+    if (Array.isArray(it?.sections) && it.sections.length) {
+      sections = it.sections.map((s) => ({
+        text: s?.text || '',
+        audio: s?.audio || s?.audioUrl || s?.audioKey || '',
+        action: s?.action || 'thinking',
+      }))
+    } else {
+      sections = [{
+        text: it?.text || it?.summary || '',
+        audio: it?.audio || it?.audioUrl || it?.audioKey || '',
+        action: it?.action || 'thinking',
+      }]
+    }
+    return { title, background, sections }
+  })
+}
 
 // Text overlay that shows one word at a time, synced with audio
 const TextOverlay = ({ text, audioRef, isActive = false, onWordChange }) => {
@@ -257,6 +227,10 @@ TextOverlay.propTypes = {
 function Feed() {
 
   const [current, setCurrent] = useState(0)
+  const [slides, setSlides] = useState([])
+  const [sectionIndex, setSectionIndex] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
 
   const handleVisibleChange = useCallback((name, index) => {
     setCurrent(index)
@@ -267,39 +241,100 @@ function Feed() {
   const audioRef = useRef(null)
   const containerRef = useRef(null)
   // total slides include an intro slide at index 0
-  const totalSlides = data.length + 1
+  const totalSlides = slides.length + 1
   // touch scroll coordination flags
   const isTouchingRef = useRef(false)
   const didNativeScrollRef = useRef(false)
 
+  // Backblaze configuration from env or provided defaults
+  const b2Config = useMemo(() => ({
+    bucket: import.meta.env.VITE_B2_BUCKET || 'confluenceraudio',
+    key: import.meta.env.VITE_B2_KEY || '',
+    secret: import.meta.env.VITE_B2_SECRET || '',
+    region: import.meta.env.VITE_B2_REGION || 'us-east-005',
+    endpoint: import.meta.env.VITE_B2_ENDPOINT || 'https://s3.us-east-005.backblazeb2.com',
+    forcePathStyle: false,
+    publicUrlBase: import.meta.env.VITE_B2_PUBLIC_URL_BASE || 'https://f005.backblazeb2.com/file/confluenceraudio',
+  }), [])
+
+  const b2 = useBackblazeAudio(b2Config)
+
+  // Turn a local-ish path like "/audio/audio1.mp3" into an object key "audio/audio1.mp3"
+  const toObjectKey = useCallback((p) => (p || '').replace(/^\//, ''), [])
+
+  // Reset section when slide changes
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      if (current > 0) {
-        audioRef.current.play().catch((e) => { console.error('Audio playback error:', e) })
-      }
-    }
+    setSectionIndex(0)
   }, [current])
 
-  // When audio ends, restart from the beginning and play again
+  // Build the audio URL for the current slide's current section using Backblaze
+  const audioSrc = useMemo(() => {
+    if (current <= 0) return null
+    const slide = slides[current - 1]
+    const section = slide?.sections?.[sectionIndex]
+    const raw = section?.audio || ''
+    // Allow absolute URLs (http/https/blob) directly from API
+    if (/^(https?:|blob:)/i.test(raw)) return raw
+    const key = toObjectKey(raw)
+    if (!key) return null
+    // Prefer public URL base if provided, else fallback to S3-style URL builder
+    const base = (b2Config.publicUrlBase || '').replace(/\/$/, '')
+    if (base) return `${base}/${key}`
+    return b2?.buildPublicUrl ? b2.buildPublicUrl(key) : null
+  }, [current, sectionIndex, b2, b2Config.publicUrlBase, toObjectKey, slides])
+
+  // Fetch slides from backend API
   useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-    const onEnded = () => {
+    let cancelled = false
+    async function load() {
+      setIsLoading(true)
+      setLoadError(null)
       try {
-        audio.currentTime = 0
-        const p = audio.play()
-        if (p && typeof p.catch === 'function') {
-          p.catch((e) => console.error('Audio replay error:', e))
-        }
+        const res = await fetch('/api/summaries', { credentials: 'omit' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = await res.json()
+        const mapped = adaptSummariesToSlides(json)
+        if (!cancelled) setSlides(mapped)
       } catch (e) {
-        console.error('Audio replay error:', e)
+        console.error('Failed to load summaries:', e)
+        if (!cancelled) setLoadError(String(e.message || e))
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
     }
-    audio.addEventListener('ended', onEnded)
-    return () => audio.removeEventListener('ended', onEnded)
-  }, [current])
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  // Manual reload (e.g., user taps intro when error)
+  const reloadSlides = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
+    try {
+      const res = await fetch('/api/summaries', { credentials: 'omit' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      const mapped = adaptSummariesToSlides(json)
+      setSlides(mapped)
+    } catch (e) {
+      console.error('Failed to load summaries (retry):', e)
+      setLoadError(String(e.message || e))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // Start/restart audio when slide or section changes
+  useEffect(() => {
+    const a = audioRef.current
+    if (!a) return
+    a.pause()
+    a.currentTime = 0
+    if (current > 0 && audioSrc) {
+      a.load()
+      a.play().catch((e) => { console.error('Audio playback error:', e) })
+    }
+  }, [current, audioSrc])
 
   const scrollToIndex = useCallback((idx) => {
     if (!containerRef.current) return
@@ -310,20 +345,52 @@ function Feed() {
     })
   }, [totalSlides])
 
+  // When audio ends: advance to next section within slide, else move to next slide or loop
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    const onEnded = () => {
+      try {
+        if (current <= 0) return
+        const slide = slides[current - 1]
+        const totalSections = slide?.sections?.length || 0
+        if (sectionIndex + 1 < totalSections) {
+          setSectionIndex((i) => i + 1)
+        } else if (current < totalSlides - 1) {
+          scrollToIndex(current + 1)
+        } else {
+          // Loop last slide
+          setSectionIndex(0)
+          audio.currentTime = 0
+          const p = audio.play()
+          if (p && typeof p.catch === 'function') {
+            p.catch((e) => console.error('Audio replay error:', e))
+          }
+        }
+      } catch (e) {
+        console.error('Audio ended handler error:', e)
+      }
+    }
+    audio.addEventListener('ended', onEnded)
+    return () => audio.removeEventListener('ended', onEnded)
+  }, [current, totalSlides, scrollToIndex, slides, sectionIndex])
+
+
+
   const next = useCallback(() => scrollToIndex(current + 1), [current, scrollToIndex])
   const prev = useCallback(() => scrollToIndex(current - 1), [current, scrollToIndex])
 
   // when the visible image changes, notify parent (and fallback to console log)
   useEffect(() => {
     if (current >= 0 && current < totalSlides) {
-      const name = current === 0 ? 'Intro' : data[current - 1].title;
+      const name = current === 0 ? 'Intro' : slides[current - 1]?.title;
       if (typeof handleVisibleChange === 'function') {
         handleVisibleChange(name, current)
       } else {
         console.log('Visible image:', name)
       }
     }
-  }, [current, totalSlides, handleVisibleChange])
+  }, [current, totalSlides, handleVisibleChange, slides])
 
   useEffect(() => {
     const el = containerRef.current
@@ -445,7 +512,11 @@ function Feed() {
       const idxAttr = frame.getAttribute('data-index')
       const idx = idxAttr ? parseInt(idxAttr, 10) : NaN
       if (!Number.isFinite(idx)) return
-      if (idx === 0) { scrollToIndex(1); return }
+      if (idx === 0) {
+        if (loadError) { reloadSlides(); return }
+        if (isLoading) { return }
+        scrollToIndex(1); return
+      }
       if (idx !== current) return
       toggleAudio()
     }
@@ -465,8 +536,13 @@ function Feed() {
       el.removeEventListener('click', onClick)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current, scrollToIndex, toggleAudio])
+  }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current, scrollToIndex, toggleAudio, isLoading, loadError, reloadSlides])
 
+  console.log({
+    audioSrc,
+    isLoading,
+    loadError,
+  })
   return (
     <div
       className="feed-container"
@@ -474,10 +550,14 @@ function Feed() {
       role="application"
       aria-label="Feed content"
     >
+      {/** Intro label text derived to avoid nested ternary in JSX */}
+      {(() => {
+        /* no-op IIFE to keep local scoped consts without extra renders */
+      })()}
       {/* Audio element for current image */}
       <audio
         ref={audioRef}
-        src={current > 0 ? data[current - 1].sections[0].audio : null}
+        src={audioSrc}
         preload="auto"
       >
         <track
@@ -505,60 +585,64 @@ function Feed() {
               padding: '0 16px',
             }}
           >
-            Tap to start
+            {(() => {
+              if (isLoading) return 'Loading…'
+              if (loadError) return 'Tap to retry'
+              return 'Tap to start'
+            })()}
           </div>
         </div>
       </div>
-      {data.map((item, index) => (
-        <div className="feed-item" key={item.title}>
+      {slides.map((slide, index) => {
+        const isActive = current === index + 1
+        const visibleSectionIdx = isActive ? sectionIndex : 0
+        const section = slide.sections?.[visibleSectionIdx] || { text: '', action: 'thinking' }
+        const actionKey = section.action
+        const poseFile = ACTIONS[actionKey] || ACTIONS.thinking
+        const poseSrc = `/images/poses/brain/${poseFile}`
+        return (
+        <div className="feed-item" key={`${slide.title}-${index}`}>
           <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
             <img
-              src={item.background}
+              src={slide.background}
               alt={`Feed ${index + 1}`}
               draggable={false}
               style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
             />
-            {(() => {
-              const actionKey = item.sections?.[0]?.action
-              const poseFile = ACTIONS[actionKey] || ACTIONS.thinking
-              const poseSrc = `/images/poses/brain/${poseFile}`
-              return (
-                <div
-                  className="pose-wrap"
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    bottom: '36%',
-                    transform: 'translateX(-50%)',
-                    pointerEvents: 'none',
-                    userSelect: 'none',
-                  }}
-                >
-                  <img
-                    src={poseSrc}
-                    alt={actionKey ? `${actionKey} pose` : 'pose'}
-                    draggable={false}
-                    className="pose-img"
-                    style={{
-                      maxHeight: 'clamp(80px, 25vh, 220px)',
-                      height: 'auto',
-                      width: 'auto',
-                      maxWidth: '90%',
-                      objectFit: 'contain',
-                      userSelect: 'none',
-                      pointerEvents: 'none',
-                      display: 'block',
-                      margin: '0 auto',
-                    }}
-                  />
-                </div>
-              )
-            })()}
+            <div
+              className="pose-wrap"
+              style={{
+                position: 'absolute',
+                left: '50%',
+                bottom: '36%',
+                transform: 'translateX(-50%)',
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            >
+              <img
+                src={poseSrc}
+                alt={actionKey ? `${actionKey} pose` : 'pose'}
+                draggable={false}
+                className="pose-img"
+                style={{
+                  maxHeight: 'clamp(80px, 25vh, 220px)',
+                  height: 'auto',
+                  width: 'auto',
+                  maxWidth: '90%',
+                  objectFit: 'contain',
+                  userSelect: 'none',
+                  pointerEvents: 'none',
+                  display: 'block',
+                  margin: '0 auto',
+                }}
+              />
+            </div>
 
-      <TextOverlay
-              text={item.sections[0].text}
+            <TextOverlay
+              text={section.text}
               audioRef={audioRef}
-              isActive={current === index + 1}
+              isActive={isActive}
               onWordChange={() => {
                 const sel = `.feed-frame[data-index="${index + 1}"] .pose-img`
                 const el = document.querySelector(sel)
@@ -566,14 +650,15 @@ function Feed() {
                   return
                 }
                 el.classList.remove('bob')
-        // force reflow to restart CSS animation reliably
-        el.getBoundingClientRect()
-        el.classList.add('bob')
+                // force reflow to restart CSS animation reliably
+                el.getBoundingClientRect()
+                el.classList.add('bob')
               }}
             />
           </div>
         </div>
-      ))}
+        )
+      })}
 
       <div className="feed-hud">
         <div className="pill">{current + 1} / {totalSlides}</div>
