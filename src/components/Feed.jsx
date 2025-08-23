@@ -27,7 +27,7 @@ const data = [
   },
   {
     title: 'Image 3',
-    background: '/images/backgrounds/backgrounds/background1.png',
+    background: '/images/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the third image in the feed.',
@@ -38,7 +38,7 @@ const data = [
   },
   {
     title: 'Image 4',
-    background: '/images/backgrounds/backgrounds/background1.png',
+    background: '/images/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the fourth image in the feed.',
@@ -49,7 +49,7 @@ const data = [
   },
   {
     title: 'Image 5',
-    background: '/images/backgrounds/backgrounds/background1.png',
+    background: '/images/backgrounds/background1.png',
     sections: [
       {
         text: 'This is the fifth image in the feed.',
@@ -71,10 +71,7 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
   const showSentenceControls = false;
 
   const recompute = useCallback(() => {
-    const el = measureRef.current
-
-    if (!el) return
-
+    // Force one word per "page"
     const words = (text || '').trim().split(/\s+/).filter(Boolean)
     if (words.length === 0) {
       setPages([''])
@@ -83,37 +80,9 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
       totalWordsRef.current = 0
       return
     }
-    // build pages by finding the longest slice that fits into 20vh
-    const out = []
-    const ranges = []
-    let start = 0
-    const fits = (s, e) => {
-      el.innerText = words.slice(s, e).join(' ')
-      // allow tiny epsilon
-      return el.scrollHeight <= el.clientHeight + 1
-    }
-    while (start < words.length) {
-      let low = start + 1
-      let high = words.length
-      let best = low
-      while (low <= high) {
-        const mid = Math.floor((low + high) / 2)
-        if (fits(start, mid)) {
-          best = mid
-          low = mid + 1
-        } else {
-          high = mid - 1
-        }
-      }
-      if (best <= start) best = Math.min(start + 1, words.length)
-      out.push(words.slice(start, best).join(' '))
-      ranges.push([start, best])
-      start = best
-    }
-    el.innerText = ''
-    setPages(out)
+    setPages(words)
     setPageIndex(0)
-    pageRangesRef.current = ranges
+    pageRangesRef.current = words.map((_, i) => [i, i + 1])
     totalWordsRef.current = words.length
   }, [text])
 
@@ -166,20 +135,17 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
       }
     }
 
-    // Reset to first page when a new audio starts playing
-    const onPlay = () => setPageIndex(0)
-    const onEnded = () => setPageIndex(pages.length - 1)
+  // Reset to first page when audio ends
+  const onEnded = () => setPageIndex(0)
 
     audio.addEventListener('timeupdate', updateFromTime)
     audio.addEventListener('seeked', updateFromTime)
     audio.addEventListener('loadedmetadata', updateFromTime)
-    audio.addEventListener('play', onPlay)
     audio.addEventListener('ended', onEnded)
     return () => {
       audio.removeEventListener('timeupdate', updateFromTime)
       audio.removeEventListener('seeked', updateFromTime)
       audio.removeEventListener('loadedmetadata', updateFromTime)
-      audio.removeEventListener('play', onPlay)
       audio.removeEventListener('ended', onEnded)
     }
   }, [audioRef, pages.length, pageIndex, isActive])
@@ -189,7 +155,7 @@ const TextOverlay = ({ text, audioRef, isActive = false }) => {
       style={{
         position: 'absolute',
         left: '50%',
-        bottom: '8%',
+        bottom: '20%',
         transform: 'translateX(-50%)',
         width: '92%',
       }}
@@ -289,6 +255,12 @@ function Feed() {
 
   // Audio playback for current image
   const audioRef = useRef(null)
+  const containerRef = useRef(null)
+  // total slides include an intro slide at index 0
+  const totalSlides = data.length + 1
+  // touch scroll coordination flags
+  const isTouchingRef = useRef(false)
+  const didNativeScrollRef = useRef(false)
 
   useEffect(() => {
     if (audioRef.current) {
@@ -300,10 +272,24 @@ function Feed() {
     }
   }, [current])
 
-
-  const containerRef = useRef(null)
-  // total slides include an intro slide at index 0
-  const totalSlides = data.length + 1
+  // When audio ends, restart from the beginning and play again
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    const onEnded = () => {
+      try {
+        audio.currentTime = 0
+        const p = audio.play()
+        if (p && typeof p.catch === 'function') {
+          p.catch((e) => console.error('Audio replay error:', e))
+        }
+      } catch (e) {
+        console.error('Audio replay error:', e)
+      }
+    }
+    audio.addEventListener('ended', onEnded)
+    return () => audio.removeEventListener('ended', onEnded)
+  }, [current])
 
   const scrollToIndex = useCallback((idx) => {
     if (!containerRef.current) return
@@ -336,7 +322,13 @@ function Feed() {
     const onScroll = () => {
       const h = el.clientHeight || 1
       const idx = Math.round(el.scrollTop / h)
-      if (idx !== current) setCurrent(Math.max(0, Math.min(totalSlides - 1, idx)))
+      if (idx !== current) {
+        if (isTouchingRef.current) {
+          // mark that native scroll advanced during touch
+          didNativeScrollRef.current = true
+        }
+        setCurrent(Math.max(0, Math.min(totalSlides - 1, idx)))
+      }
     }
 
     el.addEventListener('scroll', onScroll, { passive: true })
@@ -360,15 +352,26 @@ function Feed() {
   const touchStartY = useRef(null)
   const onTouchStart = useCallback((e) => {
     touchStartY.current = e.touches[0]?.clientY ?? 0
+    isTouchingRef.current = true
+    didNativeScrollRef.current = false
   }, [])
   const onTouchEnd = useCallback((e) => {
     const endY = e.changedTouches[0]?.clientY ?? 0
     const dy = endY - (touchStartY.current ?? 0)
     const threshold = 50
+    if (didNativeScrollRef.current) {
+      // native scroll already handled navigation during this touch
+      isTouchingRef.current = false
+      didNativeScrollRef.current = false
+      touchStartY.current = null
+      return
+    }
     if (Math.abs(dy) > threshold) {
       if (dy < 0) next()
       else prev()
     }
+    isTouchingRef.current = false
+    didNativeScrollRef.current = false
     touchStartY.current = null
   }, [next, prev])
 
@@ -406,27 +409,47 @@ function Feed() {
     window.addEventListener('mouseup', onMouseUp)
   }, [onMouseMove, onMouseUp])
 
-  console.log('Render Feed, current:', current);
-  console.log('Render Feed, audio src:', current > 0 ? data[current - 1].sections[0].audio : '(intro)');
-
   // Imperatively attach interactions to avoid a11y JSX warnings on non-interactive elements
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    const onClick = (e) => {
+      const target = e.target
+      const frame = target && typeof target.closest === 'function' ? target.closest('.feed-frame') : null
+      if (!frame) return
+      const idxAttr = frame.getAttribute('data-index')
+      const idx = idxAttr ? parseInt(idxAttr, 10) : NaN
+      if (!Number.isNaN(idx) && idx === current) {
+        const a = audioRef.current
+        if (!a) return
+        if (!a.paused) {
+          a.pause()
+        } else if (current > 0) {
+          // resume
+          const p = a.play()
+          if (p && typeof p.catch === 'function') {
+            p.catch((err) => console.error('Audio resume error:', err))
+          }
+        }
+      }
+    }
     // touch
     el.addEventListener('touchstart', onTouchStart, { passive: true })
     el.addEventListener('touchend', onTouchEnd, { passive: true })
     // mouse
     el.addEventListener('mousedown', onMouseDown)
+    // click/tap to pause
+    el.addEventListener('click', onClick)
     // keyboard on window
     window.addEventListener('keydown', onKeyDown)
     return () => {
       el.removeEventListener('touchstart', onTouchStart)
       el.removeEventListener('touchend', onTouchEnd)
       el.removeEventListener('mousedown', onMouseDown)
+      el.removeEventListener('click', onClick)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown])
+  }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current])
 
   return (
     <div
@@ -451,7 +474,7 @@ function Feed() {
       </audio>
       {/* Intro slide */}
       <div className="feed-item" key="_intro">
-        <div className="feed-frame" style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
+        <div className="feed-frame" data-index={0} style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
           <div
             style={{
               position: 'absolute',
@@ -470,17 +493,21 @@ function Feed() {
           </div>
         </div>
       </div>
-
       {data.map((item, index) => (
         <div className="feed-item" key={item.title}>
-          <div className="feed-frame" style={{ position: 'relative' }}>
+          <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
             <img
               src={item.background}
               alt={`Feed ${index + 1}`}
               draggable={false}
               style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
             />
-            <TextOverlay text={item.sections[0].text} audioRef={audioRef} isActive={current === index + 1} />
+
+            <TextOverlay
+              text={item.sections[0].text}
+              audioRef={audioRef}
+              isActive={current === index + 1}
+            />
           </div>
         </div>
       ))}
