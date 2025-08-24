@@ -149,9 +149,9 @@ const TextOverlay = ({ text, audioRef, isActive = false, onWordChange }) => {
           lineHeight: 1.1,
           textAlign: 'center',
           padding: '0 8px',
-          WebkitTextStroke: '2px #000',
+          WebkitTextStroke: 'clamp(1px, 0.04em, 2px) #000',
           textShadow:
-            '2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, 0 2px 0 #000, 2px 0 0 #000, 0 -2px 0 #000, -2px 0 0 #000',
+            'clamp(1px, 0.04em, 2px) clamp(1px, 0.04em, 2px) 0 #000, clamp(-1px, -0.04em, -2px) clamp(1px, 0.04em, 2px) 0 #000, clamp(1px, 0.04em, 2px) clamp(-1px, -0.04em, -2px) 0 #000, clamp(-1px, -0.04em, -2px) clamp(-1px, -0.04em, -2px) 0 #000, 0 clamp(1px, 0.04em, 2px) 0 #000, clamp(1px, 0.04em, 2px) 0 0 #000, 0 clamp(-1px, -0.04em, -2px) 0 #000, clamp(-1px, -0.04em, -2px) 0 0 #000',
           maxHeight: '20vh',
           overflow: 'hidden',
           userSelect: 'none',
@@ -179,9 +179,9 @@ const TextOverlay = ({ text, audioRef, isActive = false, onWordChange }) => {
           lineHeight: 1.1,
           textAlign: 'center',
           padding: '0 8px',
-          WebkitTextStroke: '2px #000',
+          WebkitTextStroke: 'clamp(1px, 0.04em, 2px) #000',
           textShadow:
-            '2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000, 0 2px 0 #000, 2px 0 0 #000, 0 -2px 0 #000, -2px 0 0 #000',
+            'clamp(1px, 0.04em, 2px) clamp(1px, 0.04em, 2px) 0 #000, clamp(-1px, -0.04em, -2px) clamp(1px, 0.04em, 2px) 0 #000, clamp(1px, 0.04em, 2px) clamp(-1px, -0.04em, -2px) 0 #000, clamp(-1px, -0.04em, -2px) clamp(-1px, -0.04em, -2px) 0 #000, 0 clamp(1px, 0.04em, 2px) 0 #000, clamp(1px, 0.04em, 2px) 0 0 #000, 0 clamp(-1px, -0.04em, -2px) 0 #000, clamp(-1px, -0.04em, -2px) 0 0 #000',
           maxHeight: '20vh',
           overflow: 'auto',
         }}
