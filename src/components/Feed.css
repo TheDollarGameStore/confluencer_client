@@ -134,3 +134,18 @@
 .pose-img.bob {
   animation: bob-up-down 200ms ease-out;
 }
+
+/* Loading message animations */
+.loading-msg {
+  font-weight: 700;
+  animation: popIn 260ms ease-out;
+}
+.loading-sub {
+  opacity: 0.8;
+  font-size: clamp(12px, 3vw, 16px);
+  margin-top: 6px;
+}
+@keyframes popIn {
+  from { transform: translateY(6px) scale(0.98); opacity: 0 }
+  to { transform: translateY(0) scale(1); opacity: 1 }
+}

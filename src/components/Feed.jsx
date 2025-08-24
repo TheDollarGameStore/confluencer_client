@@ -244,6 +244,44 @@ function Feed() {
   const [swipeCount, setSwipeCount] = useState(0)
   const [backgroundVideo, setBackgroundVideo] = useState(null)
   const [videoReady, setVideoReady] = useState(false)
+  // Loading message rotation
+  const [loadingIdx, setLoadingIdx] = useState(0)
+  const loadingMessages = useMemo(() => {
+    // Influencer-inspired quips to show while fetching
+    const brain = [
+      'Spinning up synapses…',
+      'Distilling big thoughts…',
+      'Googling Gen Z slang…',
+    ]
+    const financer = [
+      'Revising the script…',
+      'Looking up trends…',
+      'Picking the best filter…',
+    ]
+    const girl = [
+      'Curating the vibe…',
+      'Serving fresh takes…',
+      'Picking the best bits…',
+      'Setting up ring light',
+    ]
+    // Interleave for variety
+    const max = Math.max(brain.length, financer.length, girl.length)
+    const mixed = []
+    for (let i = 0; i < max; i++) {
+      if (brain[i]) mixed.push(brain[i])
+      if (girl[i]) mixed.push(girl[i])
+      if (financer[i]) mixed.push(financer[i])
+    }
+    return mixed
+  }, [])
+
+  // Rotate loading message while we wait
+  useEffect(() => {
+    if (!isLoading) return
+    setLoadingIdx(0)
+    const id = setInterval(() => setLoadingIdx((i) => i + 1), 1400)
+    return () => clearInterval(id)
+  }, [isLoading])
 
   const handleSwipe = useCallback(() => {
     setSwipeCount((prev) => prev + 1);
@@ -905,7 +943,14 @@ function Feed() {
             }}
           >
             {(() => {
-              if (isLoading) return 'Loading …'
+              if (isLoading) {
+                const msg = loadingMessages[loadingIdx % Math.max(1, loadingMessages.length)] || 'Loading…'
+                return (
+                  <div aria-live="polite" aria-atomic="true">
+                    <div className="loading-msg" key={loadingIdx}>{msg}</div>
+                  </div>
+                )
+              }
               if (loadError) return 'Tap to retry'
               return (
                 <div>
