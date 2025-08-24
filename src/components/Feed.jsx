@@ -233,6 +233,7 @@ function Feed() {
   const [loadError, setLoadError] = useState(null)
   const [swipeCount, setSwipeCount] = useState(0)
   const [backgroundVideo, setBackgroundVideo] = useState(null)
+  const [videoReady, setVideoReady] = useState(false)
 
   const handleSwipe = useCallback(() => {
     setSwipeCount((prev) => prev + 1);
@@ -242,6 +243,11 @@ function Feed() {
     setCurrent(index)
     console.log('App visible image:', index + 1, name)
   }, [])
+
+  // Reset readiness when background video source changes
+  useEffect(() => {
+    setVideoReady(false)
+  }, [backgroundVideo])
 
   // Audio playback for current image
   const audioRef = useRef(null)
@@ -668,6 +674,8 @@ function Feed() {
               loop
               muted
               playsInline
+              onCanPlay={() => setVideoReady(true)}
+              style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
             />
           )}
           <div
@@ -702,7 +710,14 @@ function Feed() {
         return (
           <div className="feed-item" key={`${slide.title}-${index}`}>
             <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
-              {backgroundVideo ? (
+              {/* Always keep the image as a fallback underneath for smooth transition */}
+              <img
+                src={slide.background}
+                alt={`Feed ${index + 1}`}
+                draggable={false}
+                style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
+              />
+              {backgroundVideo && (
                 <video
                   className="feed-video"
                   src={backgroundVideo}
@@ -711,13 +726,8 @@ function Feed() {
                   loop
                   muted
                   playsInline
-                />
-              ) : (
-                <img
-                  src={slide.background}
-                  alt={`Feed ${index + 1}`}
-                  draggable={false}
-                  style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
+                  onCanPlay={() => setVideoReady(true)}
+                  style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
                 />
               )}
               <div
@@ -730,6 +740,7 @@ function Feed() {
                   transform: 'translateX(-50%)',
                   pointerEvents: 'none',
                   userSelect: 'none',
+                  zIndex: 2,
                 }}
               >
                 <img
