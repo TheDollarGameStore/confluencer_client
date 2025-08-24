@@ -261,6 +261,9 @@ function Feed() {
   // Audio playback for current image
   const audioRef = useRef(null)
   const containerRef = useRef(null)
+  // Prevent interactions while smooth-scrolling between slides
+  const isAnimatingRef = useRef(false)
+  const animTimeoutRef = useRef(null)
   // Hold preloaded <video> elements to keep them in memory
   const preloadedVideosRef = useRef(new Map())
   const preloadedAudioRef = useRef(new Map())
@@ -490,10 +493,18 @@ function Feed() {
   const scrollToIndex = useCallback((idx) => {
     if (!containerRef.current) return
     const clamped = Math.max(0, Math.min(totalSlides - 1, idx))
+    // Mark animating during smooth scroll to disable swipe input
+    try { if (animTimeoutRef.current) { clearTimeout(animTimeoutRef.current); animTimeoutRef.current = null } } catch {}
+    isAnimatingRef.current = true
     containerRef.current.scrollTo({
       top: clamped * containerRef.current.clientHeight,
       behavior: 'smooth',
     })
+    // Re-enable interactions after a short delay (approximate smooth scroll duration)
+    animTimeoutRef.current = setTimeout(() => {
+      isAnimatingRef.current = false
+      animTimeoutRef.current = null
+    }, 450)
   }, [totalSlides])
 
   // When audio ends: advance to next section within slide, else move to next slide or loop
@@ -526,8 +537,8 @@ function Feed() {
     return () => audio.removeEventListener('ended', onEnded)
   }, [current, totalSlides, scrollToIndex, slides, sectionIndex])
 
-  const next = useCallback(() => scrollToIndex(current + 1), [current, scrollToIndex])
-  const prev = useCallback(() => scrollToIndex(current - 1), [current, scrollToIndex])
+  const next = useCallback(() => { if (isAnimatingRef.current) return; scrollToIndex(current + 1) }, [current, scrollToIndex])
+  const prev = useCallback(() => { if (isAnimatingRef.current) return; scrollToIndex(current - 1) }, [current, scrollToIndex])
 
   // when the visible image changes, notify parent (and fallback to console log)
   useEffect(() => {
@@ -535,9 +546,7 @@ function Feed() {
       const name = current === 0 ? 'Intro' : slides[current - 1]?.title;
       if (typeof handleVisibleChange === 'function') {
         handleVisibleChange(name, current)
-      } else {
-        console.log('Visible image:', name)
-      }
+      } 
     }
   }, [current, totalSlides, handleVisibleChange, slides])
 
@@ -565,6 +574,7 @@ function Feed() {
 
   // keyboard
   const onKeyDown = useCallback((e) => {
+    if (isAnimatingRef.current) return
     if (e.key === 'ArrowDown' || e.key === 'PageDown') {
       e.preventDefault();
       next()
@@ -577,11 +587,13 @@ function Feed() {
   // touch (basic vertical swipe)
   const touchStartY = useRef(null)
   const onTouchStart = useCallback((e) => {
+  if (isAnimatingRef.current) return
     touchStartY.current = e.touches[0]?.clientY ?? 0
     isTouchingRef.current = true
     didNativeScrollRef.current = false
   }, [])
   const onTouchEnd = useCallback((e) => {
+  if (isAnimatingRef.current) return
     const endY = e.changedTouches[0]?.clientY ?? 0
     const dy = endY - (touchStartY.current ?? 0)
     const threshold = 50
@@ -615,6 +627,7 @@ function Feed() {
 
   const onMouseUp = useCallback((e) => {
     if (!isDragging.current) return
+    if (isAnimatingRef.current) { isDragging.current = false; mouseStartY.current = null; return }
     const endY = e.clientY
     const dy = endY - (mouseStartY.current ?? 0)
     const threshold = 50
@@ -632,12 +645,22 @@ function Feed() {
   }, [next, prev, onMouseMove, handleSwipe])
 
   const onMouseDown = useCallback((e) => {
+    if (isAnimatingRef.current) return
     mouseStartY.current = e.clientY
     isDragging.current = true
     containerRef.current?.classList.add('dragging')
     window.addEventListener('mousemove', onMouseMove, { passive: false })
     window.addEventListener('mouseup', onMouseUp)
   }, [onMouseMove, onMouseUp])
+
+  // Cleanup any pending animation timeout on unmount
+  useEffect(() => {
+    return () => {
+      try { if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current) } catch {}
+      animTimeoutRef.current = null
+      isAnimatingRef.current = false
+    }
+  }, [])
 
   // Helper: toggle audio play/pause for the current slide
   const toggleAudio = useCallback(() => {
@@ -797,8 +820,8 @@ function Feed() {
   }, []);
 
   console.log({
-    swipeCount,
-    backgroundVideo,
+    rapidSwipeCount: swipeCount,
+    subwaySurfersModeEngaged: !!backgroundVideo,
   })
   return (
     <div
