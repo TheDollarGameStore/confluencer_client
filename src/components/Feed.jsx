@@ -274,6 +274,10 @@ function Feed() {
   // touch scroll coordination flags
   const isTouchingRef = useRef(false)
   const didNativeScrollRef = useRef(false)
+  // Track mouse wheel induced scrolling to count as a swipe
+  const isWheelingRef = useRef(false)
+  const wheelExpireRef = useRef(null)
+  const lastWheelCountedIndexRef = useRef(null)
 
   // Backblaze configuration from env or provided defaults
   const b2Config = useMemo(() => ({
@@ -565,14 +569,21 @@ function Feed() {
           // mark that native scroll advanced during touch
           didNativeScrollRef.current = true
         }
+        // If this scroll jump was triggered by the mouse wheel, count it as a swipe
+        if (isWheelingRef.current) {
+          if (lastWheelCountedIndexRef.current !== idx) {
+            handleSwipe()
+            lastWheelCountedIndexRef.current = idx
+          }
+        }
         setCurrent(Math.max(0, Math.min(totalSlides - 1, idx)))
       }
     }
 
-    el.addEventListener('scroll', onScroll, { passive: true })
+  el.addEventListener('scroll', onScroll, { passive: true })
     // focus for keyboard nav
     el.focus({ preventScroll: true })
-    return () => el.removeEventListener('scroll', onScroll)
+  return () => el.removeEventListener('scroll', onScroll)
   }, [current, totalSlides])
 
   // keyboard
@@ -702,6 +713,18 @@ function Feed() {
     // touch
     el.addEventListener('touchstart', onTouchStart, { passive: true })
     el.addEventListener('touchend', onTouchEnd, { passive: true })
+    // wheel (mouse wheel scrolls)
+    const onWheel = (e) => {
+      if (isAnimatingRef.current) return
+      isWheelingRef.current = true
+      try { if (wheelExpireRef.current) clearTimeout(wheelExpireRef.current) } catch {}
+      wheelExpireRef.current = setTimeout(() => {
+        isWheelingRef.current = false
+        lastWheelCountedIndexRef.current = null
+        wheelExpireRef.current = null
+      }, 600)
+    }
+    el.addEventListener('wheel', onWheel, { passive: true })
     // mouse
     el.addEventListener('mousedown', onMouseDown)
     // click/tap to pause
@@ -711,6 +734,7 @@ function Feed() {
     return () => {
       el.removeEventListener('touchstart', onTouchStart)
       el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('wheel', onWheel)
       el.removeEventListener('mousedown', onMouseDown)
       el.removeEventListener('click', onClick)
       window.removeEventListener('keydown', onKeyDown)
