@@ -231,6 +231,12 @@ function Feed() {
   const [sectionIndex, setSectionIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
+  const [swipeCount, setSwipeCount] = useState(0)
+  const [backgroundVideo, setBackgroundVideo] = useState(null)
+
+  const handleSwipe = useCallback(() => {
+    setSwipeCount((prev) => prev + 1);
+  }, []);
 
   const handleVisibleChange = useCallback((name, index) => {
     setCurrent(index)
@@ -240,6 +246,9 @@ function Feed() {
   // Audio playback for current image
   const audioRef = useRef(null)
   const containerRef = useRef(null)
+  // Hold preloaded <video> elements to keep them in memory
+  const preloadedVideosRef = useRef(new Map())
+  const preloadedAudioRef = useRef(new Map())
   // total slides include an intro slide at index 0
   const totalSlides = slides.length + 1
   // touch scroll coordination flags
@@ -274,21 +283,24 @@ function Feed() {
     setSectionIndex(0)
   }, [current])
 
+  // Helper to resolve an audio reference to a playable URL
+  const resolveAudioUrl = useCallback((raw) => {
+    const val = raw || ''
+    if (/^(https?:|blob:)/i.test(val)) return val
+    const key = toObjectKey(val)
+    if (!key) return null
+    const base = (b2Config.publicUrlBase || '').replace(/\/$/, '')
+    if (base) return `${base}/${key}`
+    return b2?.buildPublicUrl ? b2.buildPublicUrl(key) : null
+  }, [toObjectKey, b2Config.publicUrlBase, b2])
+
   // Build the audio URL for the current slide's current section using Backblaze
   const audioSrc = useMemo(() => {
     if (current <= 0) return null
     const slide = slides[current - 1]
     const section = slide?.sections?.[sectionIndex]
-    const raw = section?.audio || ''
-    // Allow absolute URLs (http/https/blob) directly from API
-    if (/^(https?:|blob:)/i.test(raw)) return raw
-    const key = toObjectKey(raw)
-    if (!key) return null
-    // Prefer public URL base if provided, else fallback to S3-style URL builder
-    const base = (b2Config.publicUrlBase || '').replace(/\/$/, '')
-    if (base) return `${base}/${key}`
-    return b2?.buildPublicUrl ? b2.buildPublicUrl(key) : null
-  }, [current, sectionIndex, b2, b2Config.publicUrlBase, toObjectKey, slides])
+    return resolveAudioUrl(section?.audio || '')
+  }, [current, sectionIndex, slides, resolveAudioUrl])
 
   // Fetch slides from backend API
   useEffect(() => {
@@ -382,8 +394,6 @@ function Feed() {
     return () => audio.removeEventListener('ended', onEnded)
   }, [current, totalSlides, scrollToIndex, slides, sectionIndex])
 
-
-
   const next = useCallback(() => scrollToIndex(current + 1), [current, scrollToIndex])
   const prev = useCallback(() => scrollToIndex(current - 1), [current, scrollToIndex])
 
@@ -453,11 +463,13 @@ function Feed() {
     if (Math.abs(dy) > threshold) {
       if (dy < 0) next()
       else prev()
+      // count this as a swipe
+      handleSwipe()
     }
     isTouchingRef.current = false
     didNativeScrollRef.current = false
     touchStartY.current = null
-  }, [next, prev])
+  }, [next, prev, handleSwipe])
 
   // mouse drag support
   const isDragging = useRef(false)
@@ -477,13 +489,15 @@ function Feed() {
     if (Math.abs(dy) > threshold) {
       if (dy < 0) next()
       else prev()
+      // count this as a swipe
+      handleSwipe()
     }
     isDragging.current = false
     mouseStartY.current = null
     containerRef.current?.classList.remove('dragging')
     window.removeEventListener('mousemove', onMouseMove)
     window.removeEventListener('mouseup', onMouseUp)
-  }, [next, prev, onMouseMove])
+  }, [next, prev, onMouseMove, handleSwipe])
 
   const onMouseDown = useCallback((e) => {
     mouseStartY.current = e.clientY
@@ -545,10 +559,77 @@ function Feed() {
     }
   }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current, scrollToIndex, toggleAudio, isLoading, loadError, reloadSlides])
 
+  // Prefetch audio for current slide and next 3 slides (all sections)
+  useEffect(() => {
+    // Determine slide indices to prefetch (skip intro at 0)
+    const start = Math.max(1, current)
+    const end = Math.min(slides.length, start + 3)
+    for (let i = start; i <= end; i++) {
+      const slide = slides[i - 1]
+      const sections = Array.isArray(slide?.sections) ? slide.sections : []
+      sections.forEach((s) => {
+        const url = resolveAudioUrl(s?.audio || '')
+        if (!url || preloadedAudioRef.current.has(url)) return
+        try {
+          const a = document.createElement('audio')
+          a.src = url
+          a.preload = 'auto'
+          a.crossOrigin = 'anonymous'
+          a.load()
+          preloadedAudioRef.current.set(url, a)
+        } catch (e) {
+          console.warn('Audio prefetch failed:', e)
+        }
+      })
+    }
+  }, [current, slides, resolveAudioUrl])
+
+  // Dynamically fetch video list (hardcoded for now, but can be replaced with an API call)
+  const fetchVideoList = () => {
+    return [
+      '/video/subwaySurfers.mp4',
+      // Add more video paths here as they are added to the folder
+    ];
+  };
+
+  // Prefetch a few background videos to avoid first-play stutter
+  useEffect(() => {
+    const videoList = fetchVideoList();
+    const maxPrefetch = 2; // limit prefetch to reduce bandwidth
+    videoList.slice(0, maxPrefetch).forEach((url) => {
+      if (!url || preloadedVideosRef.current.has(url)) return;
+      try {
+        const v = document.createElement('video');
+        v.src = url;
+        v.preload = 'auto';
+        v.muted = true;
+        v.playsInline = true;
+        // Kick off buffering
+        v.load();
+        preloadedVideosRef.current.set(url, v);
+      } catch (e) {
+        console.warn('Video prefetch failed:', e);
+      }
+    });
+  }, [])
+
+  useEffect(() => {
+    if (swipeCount >= 5) { // Threshold for too many swipes
+      const videoList = fetchVideoList();
+      const randomVideo = videoList[Math.floor(Math.random() * videoList.length)];
+      setBackgroundVideo(randomVideo);
+      setSwipeCount(0); // Reset swipe count
+    }
+  }, [swipeCount]);
+
+  useEffect(() => {
+    const resetSwipeCount = setInterval(() => setSwipeCount(0), 10000); // Reset every 10 seconds
+    return () => clearInterval(resetSwipeCount);
+  }, []);
+
   console.log({
-    audioSrc,
-    isLoading,
-    loadError,
+    swipeCount,
+    backgroundVideo,
   })
   return (
     <div
@@ -578,6 +659,17 @@ function Feed() {
       {/* Intro slide */}
       <div className="feed-item" key="_intro">
         <div className="feed-frame" data-index={0} style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
+          {backgroundVideo && (
+            <video
+              className="feed-video"
+              src={backgroundVideo}
+              preload="auto"
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          )}
           <div
             style={{
               position: 'absolute',
@@ -610,12 +702,24 @@ function Feed() {
         return (
           <div className="feed-item" key={`${slide.title}-${index}`}>
             <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
-              <img
-                src={slide.background}
-                alt={`Feed ${index + 1}`}
-                draggable={false}
-                style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
-              />
+              {backgroundVideo ? (
+                <video
+                  className="feed-video"
+                  src={backgroundVideo}
+                  preload="auto"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={slide.background}
+                  alt={`Feed ${index + 1}`}
+                  draggable={false}
+                  style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
+                />
+              )}
               <div
                 className="pose-wrap"
                 style={{
