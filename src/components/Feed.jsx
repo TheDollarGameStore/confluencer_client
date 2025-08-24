@@ -264,6 +264,7 @@ function Feed() {
   // Prevent interactions while smooth-scrolling between slides
   const isAnimatingRef = useRef(false)
   const animTimeoutRef = useRef(null)
+  const [isAnimating, setIsAnimating] = useState(false)
   // Hold preloaded <video> elements to keep them in memory
   const preloadedVideosRef = useRef(new Map())
   const preloadedAudioRef = useRef(new Map())
@@ -496,6 +497,7 @@ function Feed() {
     // Mark animating during smooth scroll to disable swipe input
     try { if (animTimeoutRef.current) { clearTimeout(animTimeoutRef.current); animTimeoutRef.current = null } } catch {}
     isAnimatingRef.current = true
+    setIsAnimating(true)
     containerRef.current.scrollTo({
       top: clamped * containerRef.current.clientHeight,
       behavior: 'smooth',
@@ -503,6 +505,7 @@ function Feed() {
     // Re-enable interactions after a short delay (approximate smooth scroll duration)
     animTimeoutRef.current = setTimeout(() => {
       isAnimatingRef.current = false
+      setIsAnimating(false)
       animTimeoutRef.current = null
     }, 450)
   }, [totalSlides])
@@ -853,10 +856,10 @@ function Feed() {
         <div className="feed-frame" data-index={0} style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
           <div className="feed-media">
             <video
-              className={`feed-video ${backgroundVideo && videoReady ? 'is-active' : ''}`}
-              src={backgroundVideo || undefined}
+              className={`feed-video ${backgroundVideo && videoReady && current === 0 && !isAnimating ? 'is-active' : ''}`}
+              src={backgroundVideo && (current === 0 || current === 1) ? backgroundVideo : undefined}
               preload="auto"
-              autoPlay
+              autoPlay={current === 0}
               loop
               muted
               playsInline
@@ -920,10 +923,10 @@ function Feed() {
                   }}
                 />
                 <video
-                  className={`feed-video ${backgroundVideo && videoReady ? 'is-active' : ''}`}
-                  src={backgroundVideo || undefined}
+                  className={`feed-video ${backgroundVideo && videoReady && (current === (index + 1)) && !isAnimating ? 'is-active' : ''}`}
+                  src={backgroundVideo && (Math.abs((index + 1) - current) <= 1) ? backgroundVideo : undefined}
                   preload="auto"
-                  autoPlay
+                  autoPlay={current === (index + 1)}
                   loop
                   muted
                   playsInline
