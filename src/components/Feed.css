@@ -29,23 +29,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden; /* contain bob animation */
+  overflow: hidden; /* contain children + bob animation */
 }
 
-.feed-item img {
+/* Media wrapper ensures image and video clip to the same bounds */
+.feed-media {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.feed-media .feed-bg {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  border-radius: 0;
 }
 
-/* Covering background video for slides */
+/* Background video anchored to the top-right quadrant of the slide */
 .feed-video {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  right: 0;
+  width: 50%;
+  height: 50%;
   object-fit: cover;
   display: block;
   z-index: 0;
@@ -57,15 +65,22 @@
   /* Maintain ~9:16 feel: width ~= 56.25% of viewport height, capped */
   width: min(56.25vh, 560px);
   height: 100vh;
+  /* Clip absolutely-positioned children (e.g., video) to the same rounded corners */
+  border-radius: 12px;
   }
   .feed-item {
     padding: 0 24px; /* breathing room on large screens */
   }
-  .feed-item img {
+  .feed-media,
+  .feed-media .feed-bg {
     border-radius: 12px;
   }
   .feed-video {
-    border-radius: 12px;
+    /* Only round the top-right corner to match the frame */
+    border-top-right-radius: 12px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-left-radius: 0;
   }
 }
 

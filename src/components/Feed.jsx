@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ACTIONS } from '../enums/actions.js'
+import { CONFLUENCERS } from '../enums/confluencers.js'
 import PropTypes from 'prop-types'
 import './Feed.css'
 import useBackblazeAudio from '../hooks/useBackblazeAudio.js'
@@ -12,6 +13,7 @@ function adaptSummariesToSlides(items) {
   return items.map((it, i) => {
     const title = it?.title || it?.name || `Post ${i + 1}`
     const background = it?.background || fallbackBg
+  const confluencer = it?.confluencer || 'brain'
     // Normalize sections to [{ text, audio, action }]
     let sections = []
     if (Array.isArray(it?.sections) && it.sections.length) {
@@ -27,7 +29,8 @@ function adaptSummariesToSlides(items) {
         action: it?.action || 'thinking',
       }]
     }
-    return { title, background, sections }
+  const sourceUrl = it?.sourceUrl || it?.url || undefined
+  return { title, background, sections, sourceUrl, confluencer }
   })
 }
 
@@ -134,7 +137,7 @@ const TextOverlay = ({ text, audioRef, isActive = false, onWordChange }) => {
       style={{
         position: 'absolute',
         left: '50%',
-        bottom: '20%',
+        bottom: '10%',
         transform: 'translateX(-50%)',
         width: '92%',
       }}
@@ -241,7 +244,6 @@ function Feed() {
 
   const handleVisibleChange = useCallback((name, index) => {
     setCurrent(index)
-    console.log('App visible image:', index + 1, name)
   }, [])
 
   // Reset readiness when background video source changes
@@ -255,6 +257,7 @@ function Feed() {
   // Hold preloaded <video> elements to keep them in memory
   const preloadedVideosRef = useRef(new Map())
   const preloadedAudioRef = useRef(new Map())
+  const preloadedImagesRef = useRef(new Set())
   // total slides include an intro slide at index 0
   const totalSlides = slides.length + 1
   // touch scroll coordination flags
@@ -308,17 +311,76 @@ function Feed() {
     return resolveAudioUrl(section?.audio || '')
   }, [current, sectionIndex, slides, resolveAudioUrl])
 
-  // Fetch slides from backend API
+  // Fetch slides from backend API (all confluencers, mixed and de-duplicated)
   useEffect(() => {
     let cancelled = false
+    const shuffleInPlace = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[arr[i], arr[j]] = [arr[j], arr[i]]
+      }
+      return arr
+    }
+    const jitterInPlace = (arr, radius = 3) => {
+      const n = arr.length
+      for (let i = 0; i < n - 1; i++) {
+        const max = Math.min(n - 1, i + radius)
+        if (max > i) {
+          const j = Math.floor(Math.random() * (max - i + 1)) + i
+          ;[arr[i], arr[j]] = [arr[j], arr[i]]
+        }
+      }
+      return arr
+    }
     async function load() {
       setIsLoading(true)
       setLoadError(null)
       try {
-        const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const json = await res.json()
-        const mapped = adaptSummariesToSlides(json)
+        const names = [CONFLUENCERS.brain, CONFLUENCERS.girl, CONFLUENCERS.financer].filter(Boolean)
+    const fetchFor = async (name) => {
+          try {
+            const url = `${apiBase}/summaries?confluencer=${encodeURIComponent(name)}`
+            const res = await fetch(url, { credentials: 'omit' })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            const json = await res.json()
+      return Array.isArray(json) ? shuffleInPlace(json) : []
+          } catch (e) {
+            console.warn('Failed to load summaries for', name, e)
+            return []
+          }
+        }
+        const lists = await Promise.all(names.map(async (n) => {
+          const arr = await fetchFor(n)
+          return Array.isArray(arr) ? arr.map((it) => ({ ...it, confluencer: n })) : []
+        }))
+        // Interleave evenly while de-duplicating by sourceUrl
+        const positions = lists.map(() => 0)
+        const seen = new Set()
+        const merged = []
+        let progressed = true
+        while (progressed) {
+          progressed = false
+          for (let li = 0; li < lists.length; li++) {
+            const list = lists[li] || []
+            let idx = positions[li]
+            while (idx < list.length) {
+              const item = list[idx]
+              positions[li] = idx + 1
+              idx = positions[li]
+              const key = String(item?.sourceUrl || '').trim().toLowerCase()
+              if (key && seen.has(key)) {
+                // duplicate, skip and continue scanning this list
+                continue
+              }
+              if (key) seen.add(key)
+              merged.push(item)
+              progressed = true
+              break
+            }
+          }
+        }
+  jitterInPlace(merged, 3)
+  const mapped = adaptSummariesToSlides(merged)
         if (!cancelled) setSlides(mapped)
       } catch (e) {
         console.error('Failed to load summaries:', e)
@@ -336,10 +398,67 @@ function Feed() {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json = await res.json()
-      const mapped = adaptSummariesToSlides(json)
+      const names = [CONFLUENCERS.brain, CONFLUENCERS.girl, CONFLUENCERS.financer].filter(Boolean)
+      const shuffleInPlace = (arr) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[arr[i], arr[j]] = [arr[j], arr[i]]
+        }
+        return arr
+      }
+      const jitterInPlace = (arr, radius = 3) => {
+        const n = arr.length
+        for (let i = 0; i < n - 1; i++) {
+          const max = Math.min(n - 1, i + radius)
+          if (max > i) {
+            const j = Math.floor(Math.random() * (max - i + 1)) + i
+            ;[arr[i], arr[j]] = [arr[j], arr[i]]
+          }
+        }
+        return arr
+      }
+      const fetchFor = async (name) => {
+        try {
+          const url = `${apiBase}/summaries?confluencer=${encodeURIComponent(name)}`
+          const res = await fetch(url, { credentials: 'omit' })
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const json = await res.json()
+          return Array.isArray(json) ? shuffleInPlace(json) : []
+        } catch (e) {
+          console.warn('Failed to load summaries for', name, e)
+          return []
+        }
+      }
+      const lists = await Promise.all(names.map(async (n) => {
+        const arr = await fetchFor(n)
+        return Array.isArray(arr) ? arr.map((it) => ({ ...it, confluencer: n })) : []
+      }))
+      const positions = lists.map(() => 0)
+      const seen = new Set()
+      const merged = []
+      let progressed = true
+      while (progressed) {
+        progressed = false
+        for (let li = 0; li < lists.length; li++) {
+          const list = lists[li] || []
+          let idx = positions[li]
+          while (idx < list.length) {
+            const item = list[idx]
+            positions[li] = idx + 1
+            idx = positions[li]
+            const key = String(item?.sourceUrl || '').trim().toLowerCase()
+            if (key && seen.has(key)) {
+              continue
+            }
+            if (key) seen.add(key)
+            merged.push(item)
+            progressed = true
+            break
+          }
+        }
+      }
+  jitterInPlace(merged, 3)
+  const mapped = adaptSummariesToSlides(merged)
       setSlides(mapped)
     } catch (e) {
       console.error('Failed to load summaries (retry):', e)
@@ -565,6 +684,43 @@ function Feed() {
     }
   }, [onTouchStart, onTouchEnd, onMouseDown, onKeyDown, current, scrollToIndex, toggleAudio, isLoading, loadError, reloadSlides])
 
+  // Preload all images: slide backgrounds and pose images for present confluencers
+  useEffect(() => {
+    if (!Array.isArray(slides) || slides.length === 0) return
+    const urls = new Set()
+    // Backgrounds
+    slides.forEach((s) => {
+      if (s?.background) urls.add(s.background)
+    })
+    // Ensure fallback background too
+    urls.add('/images/backgrounds/background1.png')
+
+    // Pose images: collect confluencers present, then add all ACTIONS file variants per confluencer
+    const confs = new Set(slides.map((s) => (s?.confluencer || 'brain').toLowerCase()))
+    const actionFiles = Object.values(ACTIONS)
+    confs.forEach((cf) => {
+      actionFiles.forEach((file) => {
+        urls.add(`/images/poses/${cf}/${file}`)
+        // brain fallback for each action
+        urls.add(`/images/poses/brain/${file}`)
+      })
+      // explicit explaining1 fallback
+      urls.add(`/images/poses/${cf}/${ACTIONS.explaining1}`)
+      urls.add(`/images/poses/brain/${ACTIONS.explaining1}`)
+    })
+
+    // Kick off preloads
+    urls.forEach((u) => {
+      if (!u || preloadedImagesRef.current.has(u)) return
+      try {
+        const img = new Image()
+        img.decoding = 'async'
+        img.src = u
+        preloadedImagesRef.current.add(u)
+      } catch {}
+    })
+  }, [slides])
+
   // Prefetch audio for current slide and next 3 slides (all sections)
   useEffect(() => {
     // Determine slide indices to prefetch (skip intro at 0)
@@ -665,19 +821,21 @@ function Feed() {
       {/* Intro slide */}
       <div className="feed-item" key="_intro">
         <div className="feed-frame" data-index={0} style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
-          {backgroundVideo && (
-            <video
-              className="feed-video"
-              src={backgroundVideo}
-              preload="auto"
-              autoPlay
-              loop
-              muted
-              playsInline
-              onCanPlay={() => setVideoReady(true)}
-              style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
-            />
-          )}
+          <div className="feed-media">
+            {backgroundVideo && (
+              <video
+                className="feed-video"
+                src={backgroundVideo}
+                preload="auto"
+                autoPlay
+                loop
+                muted
+                playsInline
+                onCanPlay={() => setVideoReady(true)}
+                style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
+              />
+            )}
+          </div>
           <div
             style={{
               position: 'absolute',
@@ -693,9 +851,14 @@ function Feed() {
             }}
           >
             {(() => {
-              if (isLoading) return 'Loading…'
+              if (isLoading) return 'Loading …'
               if (loadError) return 'Tap to retry'
-              return 'Tap to start'
+              return (
+                <div>
+                  <h4>Confluencer: Documentation to make your day</h4>
+                  <p>Tap to Start</p>
+                </div>
+              )
             })()}
           </div>
         </div>
@@ -704,60 +867,82 @@ function Feed() {
         const isActive = current === index + 1
         const visibleSectionIdx = isActive ? sectionIndex : 0
         const section = slide.sections?.[visibleSectionIdx] || { text: '', action: 'thinking' }
-        const actionKey = section.action
-        const poseFile = ACTIONS[actionKey] || ACTIONS.thinking
-        const poseSrc = `/images/poses/brain/${poseFile}`
+  const actionKey = section.action
+  const poseFile = ACTIONS[actionKey] || ACTIONS.thinking
+  const cf = (slide.confluencer || 'brain').toLowerCase()
+  const posePrimary = `/images/poses/${cf}/${poseFile}`
+  const poseExplainingFallback = `/images/poses/${cf}/${ACTIONS.explaining1}`
+  const poseBrainFallback = `/images/poses/brain/${poseFile}`
         return (
           <div className="feed-item" key={`${slide.title}-${index}`}>
             <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
-              {/* Always keep the image as a fallback underneath for smooth transition */}
-              <img
-                src={slide.background}
-                alt={`Feed ${index + 1}`}
-                draggable={false}
-                style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
-              />
-              {backgroundVideo && (
-                <video
-                  className="feed-video"
-                  src={backgroundVideo}
-                  preload="auto"
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  onCanPlay={() => setVideoReady(true)}
-                  style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
+              {/* Media stack: background image + optional video, clipped together */}
+              <div className="feed-media">
+                <img
+                  className="feed-bg"
+                  src={slide.background}
+                  alt={`Feed ${index + 1}`}
+                  draggable={false}
                 />
-              )}
+                {backgroundVideo && (
+                  <video
+                    className="feed-video"
+                    src={backgroundVideo}
+                    preload="auto"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    onCanPlay={() => setVideoReady(true)}
+                    style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
+                  />
+                )}
+              </div>
               <div
                 className="pose-wrap"
                 style={{
                   position: 'absolute',
                   left: '50%',
-                  bottom: '30%',
-                  width: '90%',
-                  transform: 'translateX(-50%)',
+                  bottom: '15%',
+                  width: backgroundVideo ? '70%' : '90%',
+                  transform: backgroundVideo ? 'translateX(-80%)' : 'translateX(-50%)',
                   pointerEvents: 'none',
                   userSelect: 'none',
                   zIndex: 2,
                 }}
               >
                 <img
-                  src={poseSrc}
+                  src={posePrimary}
                   alt={actionKey ? `${actionKey} pose` : 'pose'}
                   draggable={false}
                   className="pose-img"
                   style={{
                     flex: '1 0 100%',
                     height: 'auto',
-                    width: 'auto',
-                    maxWidth: '90%',
+                    width: backgroundVideo ? '100%' : 'auto',
+                    maxWidth: backgroundVideo ? '100%' : '90%',
                     objectFit: 'contain',
                     userSelect: 'none',
                     pointerEvents: 'none',
                     display: 'block',
-                    margin: '0 auto',
+                    margin: backgroundVideo ? '0' : '0 auto',
+                  }}
+                  onError={(e) => {
+                    const el = e.currentTarget
+                    // First fallback: explaining1 for this confluencer
+                    if (!el.dataset.fallbackExplaining) {
+                      el.dataset.fallbackExplaining = '1'
+                      el.src = poseExplainingFallback
+                      return
+                    }
+                    // Second fallback: brain's version of the action
+                    if (!el.dataset.fallbackBrain) {
+                      el.dataset.fallbackBrain = '1'
+                      el.src = poseBrainFallback
+                      return
+                    }
+                    // Final fallback: brain explaining1
+                    el.src = `/images/poses/brain/${ACTIONS.explaining1}`
                   }}
                 />
               </div>
