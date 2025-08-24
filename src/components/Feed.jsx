@@ -12,8 +12,15 @@ function adaptSummariesToSlides(items) {
   if (!Array.isArray(items)) return []
   return items.map((it, i) => {
     const title = it?.title || it?.name || `Post ${i + 1}`
-    const background = it?.background || fallbackBg
-  const confluencer = it?.confluencer || 'brain'
+    const confluencer = it?.confluencer || 'brain'
+    // Prefer a confluencer-specific background if present in the public folder
+    const CF_BACKGROUNDS = {
+      brain: '/images/backgrounds/brain.png',
+      financer: '/images/backgrounds/financer.png',
+      girl: '/images/backgrounds/girl.png',
+      // Note: intentionally no 'girl' background in repo; falls back below
+    }
+    const background = CF_BACKGROUNDS[(confluencer || '').toLowerCase()] || it?.background || fallbackBg
     // Normalize sections to [{ text, audio, action }]
     let sections = []
     if (Array.isArray(it?.sections) && it.sections.length) {
@@ -855,7 +862,7 @@ function Feed() {
               if (loadError) return 'Tap to retry'
               return (
                 <div>
-                  <h4>Confluencer: Documentation to make your day</h4>
+                  {/* <h4>Confluencer: Documentation to make your day</h4> */}
                   <p>Tap to Start</p>
                 </div>
               )
@@ -883,6 +890,14 @@ function Feed() {
                   src={slide.background}
                   alt={`Feed ${index + 1}`}
                   draggable={false}
+                  onError={(e) => {
+                    const el = e.currentTarget
+                    const fallback = '/images/backgrounds/background1.png'
+                    if (el.src && !el.dataset.bgFallbackApplied && !el.src.endsWith('background1.png')) {
+                      el.dataset.bgFallbackApplied = '1'
+                      el.src = fallback
+                    }
+                  }}
                 />
                 {backgroundVideo && (
                   <video
