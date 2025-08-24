@@ -297,7 +297,7 @@ function Feed() {
       setIsLoading(true)
       setLoadError(null)
       try {
-  const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
+        const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
         const mapped = adaptSummariesToSlides(json)
@@ -318,7 +318,7 @@ function Feed() {
     setIsLoading(true)
     setLoadError(null)
     try {
-  const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
+      const res = await fetch(`${apiBase}/summaries`, { credentials: 'omit' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
       const mapped = adaptSummariesToSlides(json)
@@ -608,68 +608,106 @@ function Feed() {
         const poseFile = ACTIONS[actionKey] || ACTIONS.thinking
         const poseSrc = `/images/poses/brain/${poseFile}`
         return (
-        <div className="feed-item" key={`${slide.title}-${index}`}>
-          <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
-            <img
-              src={slide.background}
-              alt={`Feed ${index + 1}`}
-              draggable={false}
-              style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
-            />
-            <div
-              className="pose-wrap"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                bottom: '36%',
-                transform: 'translateX(-50%)',
-                pointerEvents: 'none',
-                userSelect: 'none',
-              }}
-            >
+          <div className="feed-item" key={`${slide.title}-${index}`}>
+            <div className="feed-frame" data-index={index + 1} style={{ position: 'relative' }}>
               <img
-                src={poseSrc}
-                alt={actionKey ? `${actionKey} pose` : 'pose'}
+                src={slide.background}
+                alt={`Feed ${index + 1}`}
                 draggable={false}
-                className="pose-img"
+                style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none', pointerEvents: 'none' }}
+              />
+              <div
+                className="pose-wrap"
                 style={{
-                  maxHeight: 'clamp(80px, 25vh, 220px)',
-                  height: 'auto',
-                  width: 'auto',
-                  maxWidth: '90%',
-                  objectFit: 'contain',
-                  userSelect: 'none',
+                  position: 'absolute',
+                  left: '50%',
+                  bottom: '30%',
+                  width: '90%',
+                  transform: 'translateX(-50%)',
                   pointerEvents: 'none',
-                  display: 'block',
-                  margin: '0 auto',
+                  userSelect: 'none',
+                }}
+              >
+                <img
+                  src={poseSrc}
+                  alt={actionKey ? `${actionKey} pose` : 'pose'}
+                  draggable={false}
+                  className="pose-img"
+                  style={{
+                    flex: '1 0 100%',
+                    height: 'auto',
+                    width: 'auto',
+                    maxWidth: '90%',
+                    objectFit: 'contain',
+                    userSelect: 'none',
+                    pointerEvents: 'none',
+                    display: 'block',
+                    margin: '0 auto',
+                  }}
+                />
+              </div>
+
+              <TextOverlay
+                text={section.text}
+                audioRef={audioRef}
+                isActive={isActive}
+                onWordChange={() => {
+                  const sel = `.feed-frame[data-index="${index + 1}"] .pose-img`
+                  const el = document.querySelector(sel)
+                  if (!el) {
+                    return
+                  }
+                  el.classList.remove('bob')
+                  // force reflow to restart CSS animation reliably
+                  el.getBoundingClientRect()
+                  el.classList.add('bob')
                 }}
               />
             </div>
-
-            <TextOverlay
-              text={section.text}
-              audioRef={audioRef}
-              isActive={isActive}
-              onWordChange={() => {
-                const sel = `.feed-frame[data-index="${index + 1}"] .pose-img`
-                const el = document.querySelector(sel)
-                if (!el) {
-                  return
-                }
-                el.classList.remove('bob')
-                // force reflow to restart CSS animation reliably
-                el.getBoundingClientRect()
-                el.classList.add('bob')
-              }}
-            />
           </div>
-        </div>
         )
       })}
 
       <div className="feed-hud">
-        <div className="pill">{current + 1} / {totalSlides}</div>
-        <div className="hint">↑/↓ or swipe</div>
+        <div
+          className="feed-hud-row"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            width: '100%',
+            padding: '0 12px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <span
+            className="hud-title"
+            style={{
+              color: '#E6EDF3',
+              fontFamily: 'Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif',
+              fontSize: 'clamp(12px, 2.5vw, 18px)',
+              letterSpacing: '0.5px',
+              lineHeight: 1.2,
+              userSelect: 'none',
+              pointerEvents: 'none',
+              opacity: 0.95,
+              flex: '1 1 auto',
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            href={current > 0 ? slides[current - 1]?.sourceUrl : undefined}
+            aria-label="Slide title"
+          >
+            {current > 0 ? (slides[current - 1]?.title || '') : ''}
+          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+            <div className="pill">{current + 1} / {totalSlides}</div>
+            <div className="hint">↑/↓ or swipe</div>
+          </div>
+        </div>
       </div>
     </div>
   )
