@@ -265,8 +265,8 @@ function Feed() {
   const preloadedVideosRef = useRef(new Map())
   const preloadedAudioRef = useRef(new Map())
   const preloadedImagesRef = useRef(new Set())
-  // total slides include an intro slide at index 0
-  const totalSlides = slides.length + 1
+  // total slides include an intro slide at index 0 and a final slide at the end
+  const totalSlides = slides.length + 2
   // touch scroll coordination flags
   const isTouchingRef = useRef(false)
   const didNativeScrollRef = useRef(false)
@@ -829,19 +829,16 @@ function Feed() {
       <div className="feed-item" key="_intro">
         <div className="feed-frame" data-index={0} style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
           <div className="feed-media">
-            {backgroundVideo && (
-              <video
-                className="feed-video"
-                src={backgroundVideo}
-                preload="auto"
-                autoPlay
-                loop
-                muted
-                playsInline
-                onCanPlay={() => setVideoReady(true)}
-                style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
-              />
-            )}
+            <video
+              className={`feed-video ${backgroundVideo && videoReady ? 'is-active' : ''}`}
+              src={backgroundVideo || undefined}
+              preload="auto"
+              autoPlay
+              loop
+              muted
+              playsInline
+              onCanPlay={() => setVideoReady(true)}
+            />
           </div>
           <div
             style={{
@@ -899,19 +896,16 @@ function Feed() {
                     }
                   }}
                 />
-                {backgroundVideo && (
-                  <video
-                    className="feed-video"
-                    src={backgroundVideo}
-                    preload="auto"
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    onCanPlay={() => setVideoReady(true)}
-                    style={{ opacity: videoReady ? 1 : 0, transition: 'opacity 200ms ease' }}
-                  />
-                )}
+                <video
+                  className={`feed-video ${backgroundVideo && videoReady ? 'is-active' : ''}`}
+                  src={backgroundVideo || undefined}
+                  preload="auto"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  onCanPlay={() => setVideoReady(true)}
+                />
               </div>
               <div
                 className="pose-wrap"
@@ -982,6 +976,29 @@ function Feed() {
           </div>
         )
       })}
+
+      {/* Final slide: End of content */}
+      <div className="feed-item" key="_final">
+        <div className="feed-frame" data-index={totalSlides - 1} style={{ position: 'relative', background: '#000', minHeight: '100%' }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: '#fff',
+              fontFamily: 'Inter, Arial, sans-serif',
+              fontSize: 'clamp(18px, 4vw, 36px)',
+              textAlign: 'center',
+              userSelect: 'none',
+              padding: '0 16px',
+            }}
+          >
+            <div style={{ opacity: 0.9, marginBottom: '8px' }}>No more content</div>
+            <div style={{ opacity: 0.8, fontSize: 'clamp(14px, 3.5vw, 20px)' }}>Maybe go touch grass for a bit 🌿</div>
+          </div>
+        </div>
+      </div>
 
       <div className="feed-hud">
         <div

@@ -57,6 +57,12 @@
   object-fit: cover;
   display: block;
   z-index: 0;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.feed-video.is-active {
+  opacity: 1;
 }
 
 /* Desktop: limit content width to a sensible size (like TikTok phone viewport) */
